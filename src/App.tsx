@@ -1078,7 +1078,12 @@ const [githubUploading, setGithubUploading] = useState(false);
 
   async function restoreBackup(file: File) {
     const payload = JSON.parse(await file.text()) as BackupPayload;
-    const restoredPhotos = await Promise.all(payload.photos.map(async ({ dataUrl, ...photo }) => ({ ...photo, blob: await dataUrlToBlob(dataUrl) })));
+    const restoredPhotos = await Promise.all(
+  (payload.photos ?? []).map(async ({ dataUrl, ...photo }) => ({
+    ...photo,
+    blob: await dataUrlToBlob(dataUrl),
+  }))
+);
     if (payload.scope === "all") {
       if (!confirm("현재 기기의 모든 자료와 입력값, 사진을 백업 파일 내용으로 덮어씁니다. 계속할까요?")) return;
       const nextSettings = { ...payload.settings, currentRegion: payload.settings.currentRegion ?? payload.regions[0]?.name };
