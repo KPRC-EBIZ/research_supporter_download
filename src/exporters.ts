@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 import * as XLSX from "xlsx";
-import { downloadBlob, safeFilePart } from "./logic";
+import { downloadBlob, safeFilePart, shareBlob } from "./logic";
 import type { AppSettings, BackupPayload, Region, SurveyItem, SurveyPhoto, SurveyStore } from "./types";
 
 const stamp = () => new Date().toISOString().slice(0, 10).replaceAll("-", "");
