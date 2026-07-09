@@ -385,6 +385,10 @@ function App() {
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [storeStatusDraft, setStoreStatusDraft] = useState<StoreOperatingStatus | "">("");
   const [storeStatusMessage, setStoreStatusMessage] = useState("");
+  const [backupText, setBackupText] = useState("");
+const [backupTextOpen, setBackupTextOpen] = useState(false);
+const [backupTextMessage, setBackupTextMessage] = useState("");
+const [restoreText, setRestoreText] = useState("");
   const confirmResolver = useRef<((value: boolean) => void) | null>(null);
   const locatePromiseRef = useRef<Promise<{ latitude: number; longitude: number } | null> | null>(null);
   const initialLocationRequested = useRef(false);
@@ -942,6 +946,29 @@ function App() {
     await exportBackup(scopeRegion, sourceRegions, sourceStores, sourceItems, sourcePhotos, settings);
   }
 
+  async function doCopyBackup(region = currentRegion, all = false) {
+  setBackupTextMessage("백업 JSON 생성 중입니다. 사진이 많으면 시간이 걸릴 수 있습니다.");
+
+  const scopeRegion = all ? undefined : region;
+  const sourceStores = scopeRegion ? stores.filter((store) => store.region === scopeRegion) : stores;
+  const sourceItems = scopeRegion ? items.filter((item) => item.region === scopeRegion) : items;
+  const sourcePhotos = scopeRegion ? (scopeRegion === currentRegion ? photos : await getPhotosByRegion(scopeRegion)) : await getPhotos();
+  const sourceRegions = scopeRegion ? regions.filter((candidate) => candidate.name === scopeRegion) : regions;
+
+  const text = await createBackupText(
+    scopeRegion,
+    sourceRegions,
+    sourceStores,
+    sourceItems,
+    sourcePhotos,
+    settings
+  );
+
+  setBackupText(text);
+  setBackupTextOpen(true);
+  setBackupTextMessage(`백업 JSON 생성 완료: ${(text.length / 1024 / 1024).toFixed(1)}MB`);
+}
+
   async function restoreBackup(file: File) {
     const payload = JSON.parse(await file.text()) as BackupPayload;
     const restoredPhotos = await Promise.all(payload.photos.map(async ({ dataUrl, ...photo }) => ({ ...photo, blob: await dataUrlToBlob(dataUrl) })));
@@ -961,6 +988,55 @@ function App() {
     await refresh(region);
     setView("regions");
   }
+
+  async function restoreBackupFromText() {
+  if (!restoreText.trim()) {
+    alert("백업 JSON을 붙여넣으세요.");
+    return;
+  }
+
+  let payload: BackupPayload;
+
+  try {
+    payload = JSON.parse(restoreText) as BackupPayload;
+  } catch {
+    alert("백업 JSON 형식이 올바르지 않습니다.");
+    return;
+  }
+
+  const restoredPhotos = await Promise.all(
+    payload.photos.map(async ({ dataUrl, ...photo }) => ({
+      ...photo,
+      blob: await dataUrlToBlob(dataUrl),
+    }))
+  );
+
+  if (payload.scope === "all") {
+    if (!confirm("현재 기기의 모든 자료와 입력값, 사진을 붙여넣은 백업 JSON 내용으로 덮어씁니다. 계속할까요?")) return;
+
+    const nextSettings = {
+      ...payload.settings,
+      currentRegion: payload.settings.currentRegion ?? payload.regions[0]?.name,
+    };
+
+    await importAllData(payload.regions, payload.stores, payload.items, restoredPhotos, nextSettings);
+    await refresh(nextSettings.currentRegion);
+    setRestoreText("");
+    setView("regions");
+    return;
+  }
+
+  const region = payload.region ?? payload.regions[0]?.name;
+  if (!region) return;
+
+  if (!confirm(`${region} 지역 데이터를 붙여넣은 백업 JSON 내용으로 덮어씁니다. 계속할까요?`)) return;
+
+  await importRegionData(region, payload.stores, payload.items, restoredPhotos);
+  await updateSettings({ currentRegion: region });
+  await refresh(region);
+  setRestoreText("");
+  setView("regions");
+}
 
   async function openStorageInfo() {
     const estimate = await navigator.storage?.estimate?.();
