@@ -173,7 +173,12 @@ export async function exportBackup(region: string | undefined, regions: Region[]
     settings,
   };
   const suffix = region ? safeFilePart(region) : "전체";
-  await downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), `price_backup_${suffix}_${stampTime()}.json`);
+  await downloadBlob(
+  new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  }),
+  `price_survey_${safeFilePart(region)}_${stamp()}.xlsx`
+);
 }
 
 export async function dataUrlToBlob(dataUrl: string) {
