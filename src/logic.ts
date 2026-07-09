@@ -102,3 +102,98 @@ export async function downloadBlob(blob: Blob, filename: string) {
     URL.revokeObjectURL(url);
   }, 30000);
 }
+
+
+function createDownloadId() {
+  return `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+async function ensureDownloadServiceWorker() {
+  if (!("serviceWorker" in navigator)) {
+    throw new Error("Service Worker is not supported.");
+  }
+
+  const registration = await navigator.serviceWorker.register("/download-sw.js");
+
+  if (!navigator.serviceWorker.controller) {
+    await new Promise<void>((resolve) => {
+      const timer = window.setTimeout(() => resolve(), 1000);
+
+      navigator.serviceWorker.addEventListener(
+        "controllerchange",
+        () => {
+          window.clearTimeout(timer);
+          resolve();
+        },
+        { once: true }
+      );
+    });
+  }
+
+  await navigator.serviceWorker.ready;
+
+  return registration;
+}
+
+function waitForDownloadRegistered(id: string) {
+  return new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      navigator.serviceWorker.removeEventListener("message", onMessage);
+      reject(new Error("Download registration timeout."));
+    }, 5000);
+
+    function onMessage(event: MessageEvent) {
+      if (event.data?.type !== "REGISTER_DOWNLOAD_DONE") return;
+      if (event.data.id !== id) return;
+
+      window.clearTimeout(timer);
+      navigator.serviceWorker.removeEventListener("message", onMessage);
+      resolve();
+    }
+
+    navigator.serviceWorker.addEventListener("message", onMessage);
+  });
+}
+
+export async function downloadBlobByHttpResponse(
+  blob: Blob,
+  filename: string,
+  mimeType = blob.type || "application/octet-stream"
+) {
+  const registration = await ensureDownloadServiceWorker();
+  const worker =
+    navigator.serviceWorker.controller ||
+    registration.active ||
+    registration.waiting ||
+    registration.installing;
+
+  if (!worker) {
+    await downloadBlob(blob, filename);
+    return;
+  }
+
+  const id = createDownloadId();
+  const registered = waitForDownloadRegistered(id);
+
+  worker.postMessage({
+    type: "REGISTER_DOWNLOAD",
+    id,
+    blob,
+    filename,
+    mimeType,
+  });
+
+  await registered;
+
+  const link = document.createElement("a");
+
+  link.href = `/__download__/${id}`;
+  link.download = filename;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.style.display = "none";
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
