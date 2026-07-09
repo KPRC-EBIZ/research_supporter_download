@@ -5,6 +5,7 @@ import { parseContactRows, parseSurveyWorkbook, mergeContacts, rebuildStoresAndR
 import { createBackupText, dataUrlToBlob, exportBackup, exportRegionExcel, exportRegionZip } from "./exporters";
 import { mapSearchAddress, requiredPhotoLabels, summarize } from "./logic";
 import type { AppSettings, BackupPayload, PhotoType, Region, RegionStats, StoreOperatingStatus, SurveyItem, SurveyPhoto, SurveyStore } from "./types";
+import { uploadFullBackupJsonToGitHub } from "./githubBackup";
 
 type View = "upload" | "regions" | "assignment" | "workspace" | "store" | "items" | "item" | "backup" | "validation";
 type Filter = "전체" | "미완료" | "미조사" | "조사중" | "완료" | "사진누락";
@@ -419,6 +420,11 @@ function App() {
   const locatePromiseRef = useRef<Promise<{ latitude: number; longitude: number } | null> | null>(null);
   const initialLocationRequested = useRef(false);
 
+const [githubToken, setGithubToken] = useState("");
+const [githubBackupMessage, setGithubBackupMessage] = useState("");
+const [githubUploading, setGithubUploading] = useState(false);
+
+  
   const currentRegion = settings.currentRegion;
   const regionItems = useMemo(() => items.filter((item) => item.region === currentRegion), [items, currentRegion]);
   const regionStores = useMemo(() => stores.filter((store) => store.region === currentRegion), [stores, currentRegion]);
@@ -529,6 +535,73 @@ function App() {
     setPhotosReady(true);
     if (nextRegions.length && view === "upload") setView("regions");
   }
+
+  async function doGitHubFullBackup(region = currentRegion, all = false) {
+  if (!githubToken.trim()) {
+    setGithubBackupMessage("GitHub 토큰을 입력하세요.");
+    return;
+  }
+
+  setGithubUploading(true);
+  setGithubBackupMessage("사진 포함 백업 JSON 생성 준비 중입니다.");
+
+  try {
+    const scopeRegion = all ? undefined : region;
+
+    const sourceStores = scopeRegion
+      ? stores.filter((store) => store.region === scopeRegion)
+      : stores;
+
+    const sourceItems = scopeRegion
+      ? items.filter((item) => item.region === scopeRegion)
+      : items;
+
+    const sourcePhotos = scopeRegion
+      ? scopeRegion === currentRegion
+        ? photos
+        : await getPhotosByRegion(scopeRegion)
+      : await getPhotos();
+
+    const sourceRegions = scopeRegion
+      ? regions.filter((candidate) => candidate.name === scopeRegion)
+      : regions;
+
+    if (!sourceItems.length && !sourceStores.length) {
+      setGithubBackupMessage("업로드할 백업 데이터가 없습니다.");
+      return;
+    }
+
+    const { result, filename, sizeMb } = await uploadFullBackupJsonToGitHub({
+      token: githubToken.trim(),
+      region: scopeRegion,
+      regions: sourceRegions,
+      stores: sourceStores,
+      items: sourceItems,
+      photos: sourcePhotos,
+      settings,
+      onProgress: setGithubBackupMessage,
+    });
+
+    setGithubBackupMessage(
+      [
+        "GitHub 사진 포함 JSON 백업 완료",
+        `파일명: ${filename}`,
+        `크기: ${sizeMb.toFixed(1)}MB`,
+        result.content?.html_url ? `GitHub: ${result.content.html_url}` : "",
+        result.content?.download_url ? `Raw: ${result.content.download_url}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    );
+  } catch (error) {
+    console.error(error);
+    setGithubBackupMessage(
+      error instanceof Error ? error.message : "GitHub 사진 포함 백업 실패"
+    );
+  } finally {
+    setGithubUploading(false);
+  }
+}
 
   function locateUser() {
     if (locatePromiseRef.current) return locatePromiseRef.current;
@@ -1474,6 +1547,59 @@ function App() {
                 <button className="primary full-button" type="button" onClick={restoreBackupFromText}>붙여넣은 JSON 복원</button>
               </div>
             </article>
+            <article className="panel">
+  <h2>GitHub 사진 포함 백업</h2>
+  <p className="muted">
+    카카오 인앱브라우저에서 파일 다운로드가 실패할 때 사용하는 긴급 백업입니다.
+    사진까지 포함한 JSON 파일 하나를 GitHub 저장소에 업로드합니다.
+  </p>
+
+  <input
+    type="password"
+    value={githubToken}
+    onChange={(event) => setGithubToken(event.target.value)}
+    placeholder="GitHub fine-grained token"
+    autoComplete="off"
+  />
+
+  {currentRegion && (
+    <button
+      className="primary full-button"
+      type="button"
+      disabled={githubUploading || !githubToken.trim()}
+      onClick={() => doGitHubFullBackup(currentRegion, false)}
+    >
+      현재 지역 사진 포함 JSON GitHub 업로드
+    </button>
+  )}
+
+  <button
+    className="full-button"
+    type="button"
+    disabled={githubUploading || !githubToken.trim()}
+    onClick={() => doGitHubFullBackup(undefined, true)}
+  >
+    전체 사진 포함 JSON GitHub 업로드
+  </button>
+
+  <button
+    className="danger"
+    type="button"
+    disabled={githubUploading}
+    onClick={() => {
+      setGithubToken("");
+      setGithubBackupMessage("토큰 입력값을 비웠습니다. 업로드 완료 후 GitHub에서 토큰도 폐기하세요.");
+    }}
+  >
+    토큰 비우기
+  </button>
+
+  {githubBackupMessage && (
+    <p className="muted" style={{ whiteSpace: "pre-wrap" }}>
+      {githubBackupMessage}
+    </p>
+  )}
+</article>
             <article className="panel">
               <h2>초기화</h2>
               <p className="muted">기기 안의 IndexedDB 조사 데이터를 모두 삭제합니다.</p>
