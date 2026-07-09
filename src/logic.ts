@@ -103,6 +103,33 @@ export async function downloadBlob(blob: Blob, filename: string) {
   }, 30000);
 }
 
+export async function shareBlob(blob: Blob, filename: string) {
+  const file = new File([blob], filename, {
+    type: blob.type || "application/octet-stream",
+  });
+
+  const shareTarget = navigator as Navigator & {
+    canShare?: (data: ShareData) => boolean;
+    share?: (data: ShareData) => Promise<void>;
+  };
+
+  if (!shareTarget.share) {
+    await downloadBlob(blob, filename);
+    return;
+  }
+
+  if (shareTarget.canShare && !shareTarget.canShare({ files: [file] })) {
+    await downloadBlob(blob, filename);
+    return;
+  }
+
+  await shareTarget.share({
+    files: [file],
+    title: filename,
+    text: "가격조사 백업 JSON 파일입니다.",
+  });
+}
+
 
 function createDownloadId() {
   return `${Date.now()}_${Math.random().toString(36).slice(2)}`;
