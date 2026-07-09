@@ -134,8 +134,14 @@ export async function exportRegionExcel(region: string, items: SurveyItem[]) {
   );
 }
 
-export async function exportRegionZip(region: string, stores: SurveyStore[], items: SurveyItem[], photos: SurveyPhoto[]) {
+export async function makeRegionZip(
+  region: string,
+  stores: SurveyStore[],
+  items: SurveyItem[],
+  photos: SurveyPhoto[]
+) {
   const zip = new JSZip();
+
   items.forEach((item) => {
     const store = stores.find((candidate) => candidate.id === item.storeId);
     const front = store ? photoOf(photos, "STORE_FRONT", undefined, store) : undefined;
@@ -143,12 +149,35 @@ export async function exportRegionZip(region: string, stores: SurveyStore[], ite
     const info = photoOf(photos, "PRODUCT_INFO_BARCODE", item);
     const pos = photoOf(photos, "POS_RECEIPT", item);
     const name = safeFilePart(item.itemNo || item.productName);
-    if (front) zip.file(`${name}.1.jpg`, front.blob);
-    if (display) zip.file(`${name}.2.jpg`, display.blob);
-    if (info) zip.file(`${name}.3.jpg`, info.blob);
-    if (pos) zip.file(`${name}.4.jpg`, pos.blob);
+
+    if (front) {
+      zip.file(`${name}.1.jpg`, front.blob, { binary: true, compression: "STORE" });
+    }
+
+    if (display) {
+      zip.file(`${name}.2.jpg`, display.blob, { binary: true, compression: "STORE" });
+    }
+
+    if (info) {
+      zip.file(`${name}.3.jpg`, info.blob, { binary: true, compression: "STORE" });
+    }
+
+    if (pos) {
+      zip.file(`${name}.4.jpg`, pos.blob, { binary: true, compression: "STORE" });
+    }
   });
-  await downloadBlob(await zip.generateAsync({ type: "blob", mimeType: "application/zip" }), `price_photos_${safeFilePart(region)}_${stamp()}.zip`);
+
+  const blob = await zip.generateAsync({
+    type: "blob",
+    mimeType: "application/zip",
+    compression: "STORE",
+    streamFiles: true,
+  });
+
+  return {
+    blob,
+    filename: `price_photos_${safeFilePart(region)}_${stamp()}.zip`,
+  };
 }
 
 const blobToDataUrl = (blob: Blob) =>
