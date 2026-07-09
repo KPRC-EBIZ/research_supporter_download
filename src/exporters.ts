@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 import * as XLSX from "xlsx";
-import { downloadBlob, safeFilePart, shareBlob } from "./logic";
+import { downloadBlob, safeFilePart } from "./logic";
 import type { AppSettings, BackupPayload, Region, SurveyItem, SurveyPhoto, SurveyStore } from "./types";
 
 const stamp = () => new Date().toISOString().slice(0, 10).replaceAll("-", "");
@@ -24,25 +24,65 @@ function priceJudgmentOf(item: SurveyItem) {
 
 export async function exportRegionExcel(region: string, items: SurveyItem[]) {
   const group = [
-    "기준 정보", "기준 정보", "기준 정보", "기준 정보", "기준 정보", "기준 정보", "기준 정보", "기준 정보",
-    "실물 확인가능", "실물 확인가능", "실물 확인가능",
-    "가격 판단", "가격 판단", "가격 판단", "가격 판단", "가격 판단", "가격 판단",
-    "정상진열 안될 시", "정상진열 안될 시", "정상진열 안될 시", "정상진열 안될 시",
-    "특이사항", "조사일",
-    "마트정보", "마트정보", "마트정보",
-    "업체정보", "업체정보",
+    "기준 정보",
+    "기준 정보",
+    "기준 정보",
+    "기준 정보",
+    "기준 정보",
+    "기준 정보",
+    "기준 정보",
+    "기준 정보",
+    "실물 확인가능",
+    "실물 확인가능",
+    "실물 확인가능",
+    "가격 판단",
+    "가격 판단",
+    "가격 판단",
+    "가격 판단",
+    "가격 판단",
+    "가격 판단",
+    "정상진열 안될 시",
+    "정상진열 안될 시",
+    "정상진열 안될 시",
+    "정상진열 안될 시",
+    "특이사항",
+    "조사일",
+    "마트정보",
+    "마트정보",
+    "마트정보",
+    "업체정보",
+    "업체정보",
   ];
-
   const headers = [
-    "순번", "업체명", "업체연락처", "마트명", "바코드", "물품명", "규격", "기준가격",
-    "정상진열", "규격일치", "바코드일치",
-    "정상가격", "할인가격", "시작", "종료", "기간구분", "가격 판단",
-    "바코드등록여부", "미판매", "미진열", "비정상",
-    "특이사항", "조사일",
-    "광역", "시군구", "주소",
-    "담당자", "업체 연락처",
+    "순번",
+    "업체명",
+    "업체연락처",
+    "마트명",
+    "바코드",
+    "물품명",
+    "규격",
+    "기준가격",
+    "정상진열",
+    "규격일치",
+    "바코드일치",
+    "정상가격",
+    "할인가격",
+    "시작",
+    "종료",
+    "기간구분",
+    "가격 판단",
+    "바코드등록여부",
+    "미판매",
+    "미진열",
+    "비정상",
+    "특이사항",
+    "조사일",
+    "광역",
+    "시군구",
+    "주소",
+    "담당자",
+    "업체 연락처",
   ];
-
   const rows = items.map((item) => [
     item.itemNo,
     item.companyName,
@@ -73,7 +113,6 @@ export async function exportRegionExcel(region: string, items: SurveyItem[]) {
     item.companyManager ?? "",
     item.companyTel || item.martTel || "",
   ]);
-
   const ws = XLSX.utils.aoa_to_sheet([group, headers, ...rows]);
   ws["!merges"] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
@@ -84,22 +123,14 @@ export async function exportRegionExcel(region: string, items: SurveyItem[]) {
     { s: { r: 0, c: 26 }, e: { r: 0, c: 27 } },
   ];
   ws["!cols"] = headers.map((header) => ({ wch: Math.max(10, header.length + 4) }));
-
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "조사결과");
-
   const buffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  await downloadBlob(
-    new Blob([buffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }),
-    `price_survey_${safeFilePart(region)}_${stamp()}.xlsx`
-  );
+  await downloadBlob(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `price_survey_${safeFilePart(region)}_${stamp()}.xlsx`);
 }
 
 export async function exportRegionZip(region: string, stores: SurveyStore[], items: SurveyItem[], photos: SurveyPhoto[]) {
   const zip = new JSZip();
-
   items.forEach((item) => {
     const store = stores.find((candidate) => candidate.id === item.storeId);
     const front = store ? photoOf(photos, "STORE_FRONT", undefined, store) : undefined;
@@ -107,21 +138,12 @@ export async function exportRegionZip(region: string, stores: SurveyStore[], ite
     const info = photoOf(photos, "PRODUCT_INFO_BARCODE", item);
     const pos = photoOf(photos, "POS_RECEIPT", item);
     const name = safeFilePart(item.itemNo || item.productName);
-
     if (front) zip.file(`${name}.1.jpg`, front.blob, { binary: true, compression: "STORE" });
     if (display) zip.file(`${name}.2.jpg`, display.blob, { binary: true, compression: "STORE" });
     if (info) zip.file(`${name}.3.jpg`, info.blob, { binary: true, compression: "STORE" });
     if (pos) zip.file(`${name}.4.jpg`, pos.blob, { binary: true, compression: "STORE" });
   });
-
-  const blob = await zip.generateAsync({
-    type: "blob",
-    mimeType: "application/zip",
-    compression: "STORE",
-    streamFiles: true,
-  });
-
-  await downloadBlob(blob, `price_photos_${safeFilePart(region)}_${stamp()}.zip`);
+  await downloadBlob(await zip.generateAsync({ type: "blob", mimeType: "application/zip", compression: "STORE", streamFiles: true }), `price_photos_${safeFilePart(region)}_${stamp()}.zip`);
 }
 
 const blobToDataUrl = (blob: Blob) =>
@@ -132,21 +154,13 @@ const blobToDataUrl = (blob: Blob) =>
     reader.readAsDataURL(blob);
   });
 
-export async function createBackupText(
-  region: string | undefined,
-  regions: Region[],
-  stores: SurveyStore[],
-  items: SurveyItem[],
-  photos: SurveyPhoto[],
-  settings: AppSettings
-) {
+export async function createBackupText(region: string | undefined, regions: Region[], stores: SurveyStore[], items: SurveyItem[], photos: SurveyPhoto[], settings: AppSettings) {
   const photoPayload = await Promise.all(
     photos.map(async ({ blob, ...photo }) => ({
       ...photo,
       dataUrl: await blobToDataUrl(blob),
     })),
   );
-
   const payload: BackupPayload = {
     version: 1,
     exportedAt: new Date().toISOString(),
@@ -158,27 +172,21 @@ export async function createBackupText(
     photos: photoPayload,
     settings,
   };
-
-  return JSON.stringify(payload);
+  return JSON.stringify(payload, null, 2);
 }
 
-export async function exportBackup(
-  region: string | undefined,
-  regions: Region[],
-  stores: SurveyStore[],
-  items: SurveyItem[],
-  photos: SurveyPhoto[],
-  settings: AppSettings
-) {
+export async function createBackupFile(region: string | undefined, regions: Region[], stores: SurveyStore[], items: SurveyItem[], photos: SurveyPhoto[], settings: AppSettings) {
   const suffix = region ? safeFilePart(region) : "전체";
   const text = await createBackupText(region, regions, stores, items, photos, settings);
+  return {
+    blob: new Blob([text], { type: "application/json;charset=utf-8" }),
+    filename: `price_backup_${suffix}_${stampTime()}.json`,
+  };
+}
 
-  await shareBlob(
-    new Blob([text], {
-      type: "application/json;charset=utf-8",
-    }),
-    `price_backup_${suffix}_${stampTime()}.json`
-  );
+export async function exportBackup(region: string | undefined, regions: Region[], stores: SurveyStore[], items: SurveyItem[], photos: SurveyPhoto[], settings: AppSettings) {
+  const file = await createBackupFile(region, regions, stores, items, photos, settings);
+  await downloadBlob(file.blob, file.filename);
 }
 
 export async function dataUrlToBlob(dataUrl: string) {
