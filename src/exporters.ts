@@ -126,7 +126,7 @@ export async function exportRegionExcel(region: string, items: SurveyItem[]) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "조사결과");
   const buffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  await downloadBlob(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `price_survey_${safeFilePart(region)}_${stamp()}.xlsx`);
+  await downloadBlob(new Blob([buffer], { type: "application/octet-stream" }), `price_survey_${safeFilePart(region)}_${stamp()}.xlsx`);
 }
 
 export async function exportRegionZip(region: string, stores: SurveyStore[], items: SurveyItem[], photos: SurveyPhoto[]) {
@@ -138,12 +138,12 @@ export async function exportRegionZip(region: string, stores: SurveyStore[], ite
     const info = photoOf(photos, "PRODUCT_INFO_BARCODE", item);
     const pos = photoOf(photos, "POS_RECEIPT", item);
     const name = safeFilePart(item.itemNo || item.productName);
-    if (front) zip.file(`${name}.1.jpg`, front.blob, { binary: true, compression: "STORE" });
-    if (display) zip.file(`${name}.2.jpg`, display.blob, { binary: true, compression: "STORE" });
-    if (info) zip.file(`${name}.3.jpg`, info.blob, { binary: true, compression: "STORE" });
-    if (pos) zip.file(`${name}.4.jpg`, pos.blob, { binary: true, compression: "STORE" });
+    if (front) zip.file(`${name}.1.jpg`, front.blob);
+    if (display) zip.file(`${name}.2.jpg`, display.blob);
+    if (info) zip.file(`${name}.3.jpg`, info.blob);
+    if (pos) zip.file(`${name}.4.jpg`, pos.blob);
   });
-  await downloadBlob(await zip.generateAsync({ type: "blob", mimeType: "application/zip", compression: "STORE", streamFiles: true }), `price_photos_${safeFilePart(region)}_${stamp()}.zip`);
+  await downloadBlob(await zip.generateAsync({ type: "blob", mimeType: "application/zip" }), `price_photos_${safeFilePart(region)}_${stamp()}.zip`);
 }
 
 const blobToDataUrl = (blob: Blob) =>
@@ -154,7 +154,37 @@ const blobToDataUrl = (blob: Blob) =>
     reader.readAsDataURL(blob);
   });
 
-export async function createBackupText(region: string | undefined, regions: Region[], stores: SurveyStore[], items: SurveyItem[], photos: SurveyPhoto[], settings: AppSettings) {
+export async function createBackupText(
+  region: string | undefined,
+  regions: Region[],
+  stores: SurveyStore[],
+  items: SurveyItem[],
+  photos: SurveyPhoto[],
+  settings: AppSettings
+) {
+  const photoPayload = await Promise.all(
+    photos.map(async ({ blob, ...photo }) => ({
+      ...photo,
+      dataUrl: await blobToDataUrl(blob),
+    })),
+  );
+
+  const payload: BackupPayload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    scope: region ? "region" : "all",
+    region,
+    regions,
+    stores,
+    items,
+    photos: photoPayload,
+    settings,
+  };
+
+  return JSON.stringify(payload);
+}
+
+export async function exportBackup(region: string | undefined, regions: Region[], stores: SurveyStore[], items: SurveyItem[], photos: SurveyPhoto[], settings: AppSettings) {
   const photoPayload = await Promise.all(
     photos.map(async ({ blob, ...photo }) => ({
       ...photo,
@@ -172,21 +202,8 @@ export async function createBackupText(region: string | undefined, regions: Regi
     photos: photoPayload,
     settings,
   };
-  return JSON.stringify(payload, null, 2);
-}
-
-export async function createBackupFile(region: string | undefined, regions: Region[], stores: SurveyStore[], items: SurveyItem[], photos: SurveyPhoto[], settings: AppSettings) {
   const suffix = region ? safeFilePart(region) : "전체";
-  const text = await createBackupText(region, regions, stores, items, photos, settings);
-  return {
-    blob: new Blob([text], { type: "application/json;charset=utf-8" }),
-    filename: `price_backup_${suffix}_${stampTime()}.json`,
-  };
-}
-
-export async function exportBackup(region: string | undefined, regions: Region[], stores: SurveyStore[], items: SurveyItem[], photos: SurveyPhoto[], settings: AppSettings) {
-  const file = await createBackupFile(region, regions, stores, items, photos, settings);
-  await downloadBlob(file.blob, file.filename);
+  await downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), `price_backup_${suffix}_${stampTime()}.json`);
 }
 
 export async function dataUrlToBlob(dataUrl: string) {
