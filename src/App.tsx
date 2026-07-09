@@ -385,6 +385,10 @@ function App() {
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [storeStatusDraft, setStoreStatusDraft] = useState<StoreOperatingStatus | "">("");
   const [storeStatusMessage, setStoreStatusMessage] = useState("");
+  const [backupText, setBackupText] = useState("");
+const [backupTextOpen, setBackupTextOpen] = useState(false);
+const [backupTextMessage, setBackupTextMessage] = useState("");
+const [restoreText, setRestoreText] = useState("");
   const confirmResolver = useRef<((value: boolean) => void) | null>(null);
   const locatePromiseRef = useRef<Promise<{ latitude: number; longitude: number } | null> | null>(null);
   const initialLocationRequested = useRef(false);
