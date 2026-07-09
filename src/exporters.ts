@@ -126,7 +126,12 @@ export async function exportRegionExcel(region: string, items: SurveyItem[]) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "조사결과");
   const buffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  await downloadBlob(new Blob([buffer], { type: "application/octet-stream" }), `price_survey_${safeFilePart(region)}_${stamp()}.xlsx`);
+  await downloadBlob(
+    new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+    `price_survey_${safeFilePart(region)}_${stamp()}.xlsx`
+  );
 }
 
 export async function exportRegionZip(region: string, stores: SurveyStore[], items: SurveyItem[], photos: SurveyPhoto[]) {
@@ -174,11 +179,11 @@ export async function exportBackup(region: string | undefined, regions: Region[]
   };
   const suffix = region ? safeFilePart(region) : "전체";
   await downloadBlob(
-  new Blob([buffer], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  }),
-  `price_survey_${safeFilePart(region)}_${stamp()}.xlsx`
-);
+    new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json;charset=utf-8",
+    }),
+    `price_backup_${suffix}_${stampTime()}.json`
+  );
 }
 
 export async function dataUrlToBlob(dataUrl: string) {
