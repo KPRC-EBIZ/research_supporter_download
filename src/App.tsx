@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { clearAllData, deletePhoto, getItems, getPhotos, getPhotosByRegion, getPhotosByStore, getRegions, getSettings, getStores, importAllData, importRegionData, now, putItem, putPhoto, putStore, saveParsedData, saveSettings, today, uid } from "./db";
 import { parseContactRows, parseSurveyWorkbook, mergeContacts, rebuildStoresAndRegions } from "./excel";
 import { createBackupText, dataUrlToBlob, exportBackup, exportRegionExcel, exportRegionZip } from "./exporters";
-import { copyTextToClipboard, mapSearchAddress, requiredPhotoLabels, summarize } from "./logic";
+import { mapSearchAddress, requiredPhotoLabels, summarize } from "./logic";
 import type { AppSettings, BackupPayload, PhotoType, Region, RegionStats, StoreOperatingStatus, SurveyItem, SurveyPhoto, SurveyStore } from "./types";
 
 type View = "upload" | "regions" | "assignment" | "workspace" | "store" | "items" | "item" | "backup" | "validation";
@@ -90,6 +90,31 @@ const formatDistance = (km?: number) => {
   if (km === undefined) return "";
   return km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(km < 10 ? 1 : 0)}km`;
 };
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // execCommand fallback
+    }
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.readOnly = true;
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  const ok = document.execCommand("copy");
+  textarea.remove();
+  return ok;
+}
 
 function barcodeScanRegions(width: number, height: number) {
   const regions = [{ x: 0, y: 0, width, height }];
@@ -386,9 +411,10 @@ function App() {
   const [storeStatusDraft, setStoreStatusDraft] = useState<StoreOperatingStatus | "">("");
   const [storeStatusMessage, setStoreStatusMessage] = useState("");
   const [backupText, setBackupText] = useState("");
-const [backupTextOpen, setBackupTextOpen] = useState(false);
-const [backupTextMessage, setBackupTextMessage] = useState("");
-const [restoreText, setRestoreText] = useState("");
+  const [backupTextOpen, setBackupTextOpen] = useState(false);
+  const [backupTextMessage, setBackupTextMessage] = useState("");
+  const [backupTextPreparing, setBackupTextPreparing] = useState(false);
+  const [restoreText, setRestoreText] = useState("");
   const confirmResolver = useRef<((value: boolean) => void) | null>(null);
   const locatePromiseRef = useRef<Promise<{ latitude: number; longitude: number } | null> | null>(null);
   const initialLocationRequested = useRef(false);
@@ -945,6 +971,37 @@ const [restoreText, setRestoreText] = useState("");
     const sourceRegions = scopeRegion ? regions.filter((candidate) => candidate.name === scopeRegion) : regions;
     await exportBackup(scopeRegion, sourceRegions, sourceStores, sourceItems, sourcePhotos, settings);
   }
+  async function doCopyBackup(region = currentRegion, all = false) {
+    if (backupTextPreparing) return;
+    setBackupTextPreparing(true);
+    setBackupTextMessage("백업 JSON 생성 중입니다. 사진이 많으면 시간이 걸릴 수 있습니다.");
+
+    try {
+      const scopeRegion = all ? undefined : region;
+      const sourceStores = scopeRegion ? stores.filter((store) => store.region === scopeRegion) : stores;
+      const sourceItems = scopeRegion ? items.filter((item) => item.region === scopeRegion) : items;
+      const sourcePhotos = scopeRegion ? (scopeRegion === currentRegion ? photos : await getPhotosByRegion(scopeRegion)) : await getPhotos();
+      const sourceRegions = scopeRegion ? regions.filter((candidate) => candidate.name === scopeRegion) : regions;
+
+      const text = await createBackupText(
+        scopeRegion,
+        sourceRegions,
+        sourceStores,
+        sourceItems,
+        sourcePhotos,
+        settings,
+      );
+
+      setBackupText(text);
+      setBackupTextOpen(true);
+      setBackupTextMessage(`백업 JSON 생성 완료: ${(text.length / 1024 / 1024).toFixed(1)}MB`);
+    } catch (error) {
+      console.error(error);
+      setBackupTextMessage("백업 JSON 생성에 실패했습니다. 사진 수가 많으면 현재 지역 단위로 다시 시도하세요.");
+    } finally {
+      setBackupTextPreparing(false);
+    }
+  }
 
   async function restoreBackup(file: File) {
     const payload = JSON.parse(await file.text()) as BackupPayload;
@@ -963,6 +1020,59 @@ const [restoreText, setRestoreText] = useState("");
     await importRegionData(region, payload.stores, payload.items, restoredPhotos);
     await updateSettings({ currentRegion: region });
     await refresh(region);
+    setView("regions");
+  }
+
+  async function restoreBackupFromText() {
+    if (!restoreText.trim()) {
+      alert("백업 JSON을 붙여넣으세요.");
+      return;
+    }
+
+    let payload: BackupPayload;
+
+    try {
+      payload = JSON.parse(restoreText) as BackupPayload;
+    } catch {
+      alert("백업 JSON 형식이 올바르지 않습니다.");
+      return;
+    }
+
+    const restoredPhotos = await Promise.all(
+      payload.photos.map(async ({ dataUrl, ...photo }) => ({
+        ...photo,
+        blob: await dataUrlToBlob(dataUrl),
+      }))
+    );
+
+    if (payload.scope === "all") {
+      if (!confirm("현재 기기의 모든 자료와 입력값, 사진을 붙여넣은 백업 JSON 내용으로 덮어씁니다. 계속할까요?")) return;
+
+      const nextSettings = {
+        ...payload.settings,
+        currentRegion: payload.settings.currentRegion ?? payload.regions[0]?.name,
+      };
+
+      await importAllData(payload.regions, payload.stores, payload.items, restoredPhotos, nextSettings);
+      await refresh(nextSettings.currentRegion);
+      setRestoreText("");
+      setView("regions");
+      return;
+    }
+
+    const region = payload.region ?? payload.regions[0]?.name;
+
+    if (!region) {
+      alert("복원할 지역 정보가 없습니다.");
+      return;
+    }
+
+    if (!confirm(`${region} 지역 데이터를 붙여넣은 백업 JSON 내용으로 덮어씁니다. 계속할까요?`)) return;
+
+    await importRegionData(region, payload.stores, payload.items, restoredPhotos);
+    await updateSettings({ currentRegion: region });
+    await refresh(region);
+    setRestoreText("");
     setView("regions");
   }
 
@@ -1351,11 +1461,18 @@ const [restoreText, setRestoreText] = useState("");
               <h2>백업 내려받기</h2>
               <p className="muted">현재 브라우저에 저장된 조사 데이터와 사진을 JSON으로 저장합니다.</p>
               <button className="primary full-button" onClick={() => doBackup(undefined, true)}><Download size={17} />전체 백업 다운로드</button>
+              <button className="full-button" type="button" disabled={backupTextPreparing} onClick={() => doCopyBackup(undefined, true)}>전체 백업 JSON 복사</button>
+              {currentRegion && <button className="full-button" type="button" disabled={backupTextPreparing} onClick={() => doCopyBackup(currentRegion, false)}>현재 지역 백업 JSON 복사</button>}
+              {backupTextMessage && <p className="muted">{backupTextMessage}</p>}
             </article>
             <article className="panel">
               <h2>백업 업로드</h2>
               <p className="muted">다른 폰이나 PC에서 만든 백업 JSON을 불러옵니다.</p>
               <label className="photo-button"><Upload size={18} />백업 JSON 업로드<input type="file" accept="application/json,.json" onChange={(event) => event.target.files?.[0] && restoreBackup(event.target.files[0])} /></label>
+              <div className="paste-restore">
+                <textarea value={restoreText} onChange={(event) => setRestoreText(event.target.value)} placeholder="백업 JSON을 여기에 붙여넣으세요." rows={8} />
+                <button className="primary full-button" type="button" onClick={restoreBackupFromText}>붙여넣은 JSON 복원</button>
+              </div>
             </article>
             <article className="panel">
               <h2>초기화</h2>
@@ -1379,6 +1496,36 @@ const [restoreText, setRestoreText] = useState("");
           onRefresh={openStorageInfo}
           onClose={() => setStorageOpen(false)}
         />
+      )}
+      {backupTextOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <section className="modal">
+            <div className="modal-head">
+              <div>
+                <h2>백업 JSON 생성 완료</h2>
+                <p className="muted">아래 내용을 복사한 뒤 Chrome 또는 일반 브라우저에서 백업/복원 화면의 붙여넣기 복원에 넣으세요.</p>
+              </div>
+              <button className="icon-button" onClick={() => { setBackupTextOpen(false); setBackupText(""); }} aria-label="닫기"><X size={18} /></button>
+            </div>
+            <div className="storage-meter">
+              <div><strong>{(backupText.length / 1024 / 1024).toFixed(1)}MB</strong><span>JSON 크기</span></div>
+              <div><strong>{backupText.length.toLocaleString()}</strong><span>문자 수</span></div>
+            </div>
+            <p className="small-help warn">자동 복사가 실패하면 아래 텍스트 영역을 길게 눌러 전체 선택 후 복사하세요. 처음에는 전체 백업보다 현재 지역 백업부터 테스트하는 것이 안전합니다.</p>
+            <textarea value={backupText} readOnly rows={10} onFocus={(event) => event.currentTarget.select()} />
+            <button
+              className="primary full-button"
+              type="button"
+              onClick={async () => {
+                const ok = await copyTextToClipboard(backupText);
+                alert(ok ? "백업 JSON을 복사했습니다." : "자동 복사에 실패했습니다. 아래 텍스트를 길게 눌러 전체 선택 후 복사하세요.");
+              }}
+            >
+              전체 복사
+            </button>
+            <button className="full-button" type="button" onClick={() => { setBackupTextOpen(false); setBackupText(""); }}>닫기</button>
+          </section>
+        </div>
       )}
       {confirmState && <ConfirmDialog state={confirmState} onClose={closeConfirm} />}
       {summaryOpen && view === "regions" && (
