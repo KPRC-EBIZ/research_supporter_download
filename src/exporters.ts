@@ -126,22 +126,11 @@ export async function exportRegionExcel(region: string, items: SurveyItem[]) {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "조사결과");
   const buffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  await downloadBlob(
-    new Blob([buffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }),
-    `price_survey_${safeFilePart(region)}_${stamp()}.xlsx`
-  );
+  await downloadBlob(new Blob([buffer], { type: "application/octet-stream" }), `price_survey_${safeFilePart(region)}_${stamp()}.xlsx`);
 }
 
-export async function makeRegionZip(
-  region: string,
-  stores: SurveyStore[],
-  items: SurveyItem[],
-  photos: SurveyPhoto[]
-) {
+export async function exportRegionZip(region: string, stores: SurveyStore[], items: SurveyItem[], photos: SurveyPhoto[]) {
   const zip = new JSZip();
-
   items.forEach((item) => {
     const store = stores.find((candidate) => candidate.id === item.storeId);
     const front = store ? photoOf(photos, "STORE_FRONT", undefined, store) : undefined;
@@ -149,35 +138,12 @@ export async function makeRegionZip(
     const info = photoOf(photos, "PRODUCT_INFO_BARCODE", item);
     const pos = photoOf(photos, "POS_RECEIPT", item);
     const name = safeFilePart(item.itemNo || item.productName);
-
-    if (front) {
-      zip.file(`${name}.1.jpg`, front.blob, { binary: true, compression: "STORE" });
-    }
-
-    if (display) {
-      zip.file(`${name}.2.jpg`, display.blob, { binary: true, compression: "STORE" });
-    }
-
-    if (info) {
-      zip.file(`${name}.3.jpg`, info.blob, { binary: true, compression: "STORE" });
-    }
-
-    if (pos) {
-      zip.file(`${name}.4.jpg`, pos.blob, { binary: true, compression: "STORE" });
-    }
+    if (front) zip.file(`${name}.1.jpg`, front.blob);
+    if (display) zip.file(`${name}.2.jpg`, display.blob);
+    if (info) zip.file(`${name}.3.jpg`, info.blob);
+    if (pos) zip.file(`${name}.4.jpg`, pos.blob);
   });
-
-  const blob = await zip.generateAsync({
-    type: "blob",
-    mimeType: "application/zip",
-    compression: "STORE",
-    streamFiles: true,
-  });
-
-  return {
-    blob,
-    filename: `price_photos_${safeFilePart(region)}_${stamp()}.zip`,
-  };
+  await downloadBlob(await zip.generateAsync({ type: "blob", mimeType: "application/zip" }), `price_photos_${safeFilePart(region)}_${stamp()}.zip`);
 }
 
 const blobToDataUrl = (blob: Blob) =>
@@ -207,12 +173,7 @@ export async function exportBackup(region: string | undefined, regions: Region[]
     settings,
   };
   const suffix = region ? safeFilePart(region) : "전체";
-  await downloadBlob(
-    new Blob([JSON.stringify(payload, null, 2)], {
-      type: "application/json;charset=utf-8",
-    }),
-    `price_backup_${suffix}_${stampTime()}.json`
-  );
+  await downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), `price_backup_${suffix}_${stampTime()}.json`);
 }
 
 export async function dataUrlToBlob(dataUrl: string) {
