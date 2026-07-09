@@ -160,3 +160,23 @@ export async function downloadBlob(blob: Blob, filename: string) {
 
   setTimeout(() => URL.revokeObjectURL(url), 120000);
 }
+
+export async function shareOrDownloadBlob(blob: Blob, filename: string) {
+  const type = blob.type || "application/zip";
+  const file = new File([blob], filename, { type });
+
+  const shareTarget = navigator as Navigator & {
+    canShare?: (data: ShareData) => boolean;
+    share?: (data: ShareData) => Promise<void>;
+  };
+
+  if (shareTarget.canShare?.({ files: [file] }) && shareTarget.share) {
+    await shareTarget.share({
+      files: [file],
+      title: filename,
+    });
+    return;
+  }
+
+  await downloadBlob(blob, filename);
+}
