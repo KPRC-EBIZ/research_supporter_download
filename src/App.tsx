@@ -1423,6 +1423,25 @@ const [restoreText, setRestoreText] = useState("");
               <h2>백업 내려받기</h2>
               <p className="muted">현재 브라우저에 저장된 조사 데이터와 사진을 JSON으로 저장합니다.</p>
               <button className="primary full-button" onClick={() => doBackup(undefined, true)}><Download size={17} />전체 백업 다운로드</button>
+              <button
+  className="full-button"
+  type="button"
+  onClick={() => doCopyBackup(undefined, true)}
+>
+  전체 백업 JSON 복사
+</button>
+
+{currentRegion && (
+  <button
+    className="full-button"
+    type="button"
+    onClick={() => doCopyBackup(currentRegion, false)}
+  >
+    현재 지역 백업 JSON 복사
+  </button>
+)}
+
+{backupTextMessage && <p className="muted">{backupTextMessage}</p>}
             </article>
             <article className="panel">
               <h2>백업 업로드</h2>
