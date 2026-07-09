@@ -154,6 +154,36 @@ const blobToDataUrl = (blob: Blob) =>
     reader.readAsDataURL(blob);
   });
 
+export async function createBackupText(
+  region: string | undefined,
+  regions: Region[],
+  stores: SurveyStore[],
+  items: SurveyItem[],
+  photos: SurveyPhoto[],
+  settings: AppSettings
+) {
+  const photoPayload = await Promise.all(
+    photos.map(async ({ blob, ...photo }) => ({
+      ...photo,
+      dataUrl: await blobToDataUrl(blob),
+    })),
+  );
+
+  const payload: BackupPayload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    scope: region ? "region" : "all",
+    region,
+    regions,
+    stores,
+    items,
+    photos: photoPayload,
+    settings,
+  };
+
+  return JSON.stringify(payload);
+}
+
 export async function exportBackup(region: string | undefined, regions: Region[], stores: SurveyStore[], items: SurveyItem[], photos: SurveyPhoto[], settings: AppSettings) {
   const photoPayload = await Promise.all(
     photos.map(async ({ blob, ...photo }) => ({
