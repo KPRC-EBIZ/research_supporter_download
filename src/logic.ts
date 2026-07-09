@@ -75,6 +75,19 @@ export function mapSearchAddress(address: string) {
 }
 
 export async function downloadBlob(blob: Blob, filename: string) {
+  const file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
+  const shareTarget = navigator as Navigator & {
+    canShare?: (data: ShareData) => boolean;
+    share?: (data: ShareData) => Promise<void>;
+  };
+  if (shareTarget.canShare?.({ files: [file] }) && shareTarget.share) {
+    try {
+      await shareTarget.share({ files: [file], title: filename });
+      return;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+    }
+  }
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -89,21 +102,32 @@ export async function downloadBlob(blob: Blob, filename: string) {
     URL.revokeObjectURL(url);
   }, 30000);
 }
-
-export async function shareBlob(blob: Blob, filename: string, text = "가격조사 백업 JSON 파일입니다.") {
-  const file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
-  const shareTarget = navigator as Navigator & {
-    canShare?: (data: ShareData) => boolean;
-    share?: (data: ShareData) => Promise<void>;
-  };
-
-  if (!shareTarget.share) {
-    throw new Error("이 브라우저에서는 파일 공유 기능을 지원하지 않습니다.");
+export async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // fallback 사용
+    }
   }
 
-  if (shareTarget.canShare && !shareTarget.canShare({ files: [file] })) {
-    throw new Error("이 브라우저에서는 이 파일을 공유할 수 없습니다.");
-  }
+  const textarea = document.createElement("textarea");
 
-  await shareTarget.share({ files: [file], title: filename, text });
+  textarea.value = text;
+  textarea.readOnly = true;
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  textarea.style.opacity = "0";
+
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  const ok = document.execCommand("copy");
+
+  textarea.remove();
+
+  return ok;
 }
