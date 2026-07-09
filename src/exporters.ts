@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 import * as XLSX from "xlsx";
-import { downloadBlob, downloadBlobByHttpResponse, safeFilePart } from "./logic";
+import { downloadBlob, safeFilePart, shareBlob } from "./logic";
 import type { AppSettings, BackupPayload, Region, SurveyItem, SurveyPhoto, SurveyStore } from "./types";
 
 const stamp = () => new Date().toISOString().slice(0, 10).replaceAll("-", "");
@@ -192,7 +192,12 @@ export async function exportBackup(region: string | undefined, regions: Region[]
     settings,
   };
   const suffix = region ? safeFilePart(region) : "전체";
-  await downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), `price_backup_${suffix}_${stampTime()}.json`);
+  await shareBlob(
+  new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json;charset=utf-8",
+  }),
+  `price_backup_${suffix}_${stampTime()}.json`
+);
 }
 
 export async function dataUrlToBlob(dataUrl: string) {
