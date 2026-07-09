@@ -75,19 +75,6 @@ export function mapSearchAddress(address: string) {
 }
 
 export async function downloadBlob(blob: Blob, filename: string) {
-  const file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
-  const shareTarget = navigator as Navigator & {
-    canShare?: (data: ShareData) => boolean;
-    share?: (data: ShareData) => Promise<void>;
-  };
-  if (shareTarget.canShare?.({ files: [file] }) && shareTarget.share) {
-    try {
-      await shareTarget.share({ files: [file], title: filename });
-      return;
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-    }
-  }
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -102,7 +89,6 @@ export async function downloadBlob(blob: Blob, filename: string) {
     URL.revokeObjectURL(url);
   }, 30000);
 }
-
 
 export async function shareBlob(blob: Blob, filename: string) {
   const file = new File([blob], filename, {
@@ -133,12 +119,15 @@ export async function shareBlob(blob: Blob, filename: string) {
 
 export async function copyTextToClipboard(text: string) {
   if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return true;
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // fallback 사용
+    }
   }
 
   const textarea = document.createElement("textarea");
-
   textarea.value = text;
   textarea.readOnly = true;
   textarea.style.position = "fixed";
@@ -151,7 +140,6 @@ export async function copyTextToClipboard(text: string) {
   textarea.select();
 
   const ok = document.execCommand("copy");
-
   textarea.remove();
 
   return ok;
