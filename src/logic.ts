@@ -74,31 +74,89 @@ export function mapSearchAddress(address: string) {
     .trim();
 }
 
-export async function downloadBlob(blob: Blob, filename: string) {
-  const file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
-  const shareTarget = navigator as Navigator & {
-    canShare?: (data: ShareData) => boolean;
-    share?: (data: ShareData) => Promise<void>;
-  };
-  if (shareTarget.canShare?.({ files: [file] }) && shareTarget.share) {
-    try {
-      await shareTarget.share({ files: [file], title: filename });
-      return;
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-    }
+function isKakaoInAppBrowser() {
+  const ua = navigator.userAgent || "";
+  return /KAKAOTALK|KakaoTalk|KAKAOSTORY|KakaoStory/i.test(ua);
+}
+
+function mimeFromFilename(filename: string, fallback = "application/octet-stream") {
+  const lower = filename.toLowerCase();
+
+  if (lower.endsWith(".xlsx")) {
+    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
   }
-  const url = URL.createObjectURL(blob);
+
+  if (lower.endsWith(".zip")) {
+    return "application/zip";
+  }
+
+  if (lower.endsWith(".json")) {
+    return "application/json;charset=utf-8";
+  }
+
+  if (lower.endsWith(".csv")) {
+    return "text/csv;charset=utf-8";
+  }
+
+  return fallback;
+}
+
+function clickDownload(url: string, filename: string) {
   const anchor = document.createElement("a");
+
   anchor.href = url;
   anchor.download = filename;
-  anchor.target = "_self";
   anchor.rel = "noopener";
+  anchor.target = "_blank";
   anchor.style.display = "none";
+
   document.body.appendChild(anchor);
   anchor.click();
-  setTimeout(() => {
-    anchor.remove();
-    URL.revokeObjectURL(url);
-  }, 30000);
+  anchor.remove();
+}
+
+async function downloadByDataUrl(blob: Blob, filename: string) {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+  clickDownload(dataUrl, filename);
+}
+
+export async function downloadBlob(blob: Blob, filename: string) {
+  const type = mimeFromFilename(filename, blob.type || "application/octet-stream");
+  const output = blob.type === type ? blob : new Blob([blob], { type });
+  const isKakao = isKakaoInAppBrowser();
+
+  if (!isKakao) {
+    const file = new File([output], filename, { type });
+    const shareTarget = navigator as Navigator & {
+      canShare?: (data: ShareData) => boolean;
+      share?: (data: ShareData) => Promise<void>;
+    };
+
+    if (shareTarget.canShare?.({ files: [file] }) && shareTarget.share) {
+      try {
+        await shareTarget.share({ files: [file], title: filename });
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      }
+    }
+  }
+
+  if (isKakao && output.size <= 20 * 1024 * 1024) {
+    await downloadByDataUrl(output, filename);
+    return;
+  }
+
+  const url = URL.createObjectURL(output);
+
+  clickDownload(url, filename);
+
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
 }
