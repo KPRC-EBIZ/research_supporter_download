@@ -2,8 +2,8 @@ import { Camera, CheckCircle2, ChevronDown, ChevronUp, Download, Menu, MoreVerti
 import { useEffect, useMemo, useRef, useState } from "react";
 import { clearAllData, deletePhoto, getItems, getPhotos, getPhotosByRegion, getPhotosByStore, getRegions, getSettings, getStores, importAllData, importRegionData, now, putItem, putPhoto, putStore, saveParsedData, saveSettings, today, uid } from "./db";
 import { parseContactRows, parseSurveyWorkbook, mergeContacts, rebuildStoresAndRegions } from "./excel";
-import { dataUrlToBlob, exportBackup, exportRegionExcel, exportRegionZip } from "./exporters";
-import { mapSearchAddress, requiredPhotoLabels, summarize } from "./logic";
+import { createBackupText, dataUrlToBlob, exportBackup, exportRegionExcel, exportRegionZip } from "./exporters";
+import { copyTextToClipboard, mapSearchAddress, requiredPhotoLabels, summarize } from "./logic";
 import type { AppSettings, BackupPayload, PhotoType, Region, RegionStats, StoreOperatingStatus, SurveyItem, SurveyPhoto, SurveyStore } from "./types";
 
 type View = "upload" | "regions" | "assignment" | "workspace" | "store" | "items" | "item" | "backup" | "validation";
